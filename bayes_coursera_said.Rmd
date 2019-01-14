@@ -1,0 +1,210 @@
+---
+title: "Data Analysis Project"
+subtitle: "The case of Diabetes on Pima Indians"
+author: "Said Jiménez"
+date: "24/06/17"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(rjags)
+library(caret)
+library(faraway)
+library(caTools)
+library(GGally)
+library(ggplot2)
+
+```
+
+## Abstract
+
+
+Two Bayesian logistic models are presented to classify the results of a diabetes test in a group of 768 Indian women. Both models use different health indicators as predictors, but vary in the number of features used. The Deviance Information Criterion (DIC) was used to determined which of the two models were the most useful and the selected model was used to predict the test's results of all women evaluated. The comparison between the actual diagnoses and predictions indicates adequate predictive capacity of the model. 
+
+## Introduction
+
+
+Diabetes is a chronic disease in which the body is not able to regulate the amount of sugar in the blood. The methods of diagnosis involve the measurement of glucose, however there are several health indicators that could help to have a more accurate diagnosis. The purpose of this paper is to compare the classification power of two models, one involving different health indicators and other that includes just two predictors: glucose and body mass index. Therefore, the research question is: 
+
+> Which of two statistical models allows a better classification? The model that includes different health indicators or the one which only includes glucose and BMI?
+
+
+## Data
+
+
+Data are derived from a study conducted by the National Institute of Diabetes and Kidney Digestive Diseases. It includes measurements of 768 adult Indian Pima women, living near Phoenix, its variables are: number of pregnancies glucose, diastolic pressure, triceps skin thickness, insulin level, body mass index, diabetes pedigree function, age and results of a test that indicates if the patient shows signs of diabetes. Data are free and can be consulted in the repository for Machine Learning of the UCI <http://archive.ics.uci.edu/ml/datasets/Pima+Indians+Diabetes>.
+
+
+We center and scale the data to make the measurements comparable and to use the same prior for the predictors in the next section. Here are shown the first six cases: 
+
+
+```{r}
+data("pima")
+X <- scale(pima[-9])
+head(X)
+
+```
+
+
+Here is depicted the relationship between glucose levels and test results, in general, it is seen that there are more people who are negative in the diabetes test, but as glucose increases the positive ones also increases. 
+
+
+```{r}
+plot(jitter(test) ~ glucose, data = pima, xlim = c(45, 200),
+     ylab = "Test", xlab = "Glucose")
+
+```
+
+## Model
+
+
+Two logistic models were used to classify the results of the diabetes test. A complete model that included all available predictors in the database. And, in the other hand, a reduced model, which only used predictors: glucose and BMI. The specifications of the complete model are shown in the JAGS code below: 
+
+```{r, echo = TRUE}
+# String model in JAGS
+mod_string <- "model {
+  # Likelihood Bernoulli
+  for (i in 1:length(y)) {
+    y[i] ~ dbern(p[i])
+    
+    logit(p[i]) = int + b[1]*pregnant[i] + b[2]*glucose[i] + b[3]*diastolic[i] +
+      b[4]*triceps[i] + b[5]*insulin[i] + b[6]*bmi[i] + b[7]*diabetes[i] + 
+      b[8]*age[i]
+  }
+
+  # Prior for the intercept
+  int ~ dnorm(0.0, 1.0/25.0)
+  
+  # Informative prior for predictors
+  for (j in 1:8) {
+    b[j] ~ ddexp(0.0, sqrt(2.0)) # variance of 1
+  }
+}"
+
+```
+
+
+### Complete Model
+
+
+We first fit the complete model with three Markov Chains and we run it for 5,000 iterations. Later, the convergence diagnoses were performed and checked, they did not show problems in autocorrelation and had an effective sample size of several thousand simulations, so we concluded that there were no problems of convergence.
+
+```{r, echo = FALSE, results = 'hide'}
+set.seed(124)
+
+data_jags <- list(y = pima$test, pregnant = X[, "pregnant"], glucose = X[, "glucose"],
+                  diastolic = X[, "diastolic"], triceps = X[, "triceps"], insulin = X[, "insulin"],
+                  bmi = X[, "bmi"], diabetes = X[, "diabetes"], age = X[, "age"])
+
+params <- c("int", "b")
+
+mod <- jags.model(textConnection(mod_string), 
+                  data = data_jags, 
+                  n.chains = 3)
+
+update(mod, 1e3)
+
+mod_sim <- coda.samples(model = mod, variable.names = params, n.iter = 5e3)
+
+mod_csim <- as.mcmc(do.call(rbind, mod_sim))
+
+#plot(mod_sim)
+#autocorr.diag(mod_sim)
+#effectiveSize(mod_sim)
+```
+
+### Reduced Model
+
+In the other hand, the reduced model consisted of the same specifications as the full model, except that only the variables: glucose and BMI were selected. The decision of choose these two predictors was made based on theory and results of the complete model, which seem to support the main contribution of these two features on the diagnosis. We fit and checked the model in the same way of the complete model, convergence diagnoses did not show any problem. 
+
+```{r, echo=FALSE, warning=FALSE, results = 'hide'}
+### modelo 2 con glucose y bmi 
+mod2_string <- "model {
+  for (i in 1:length(y)) {
+y[i] ~ dbern(p[i])
+
+logit(p[i]) = int + b[1]*glucose[i] + b[2]*bmi[i] 
+}
+# prior para el intercepto
+int ~ dnorm(0.0, 1.0/25.0)
+
+# prior para los coeficientes
+for (j in 1:2) {
+b[j] ~ ddexp(0.0, sqrt(2.0)) # variance of 1
+}
+}"
+
+mod2 <- jags.model(textConnection(mod2_string), data = data_jags, n.chains = 3)
+update(mod2, 1e3)
+
+mod2_sim <- coda.samples(mod2, variable.names = params, n.iter = 5e3)
+
+mod2_csim <- as.mcmc(do.call(rbind, mod2_sim))
+
+
+```
+
+
+## Results
+
+### Complete Model
+
+The complete model indicates that the variables: pregnancy, glucose, BMI, and diabetes pedigree function increases the probability of being positive en diabetes test. While the predictors diastolic pressure and insulin decreases this probability. The most important predictors are glucose and BMI. The following are the means of the combines samples of the three simulated chains, as well as the DIC:
+```{r}
+#par(mfrow = c(2, 4))
+#densplot(mod_csim[, 1:8], xlim = c(-3.0, 3.0))
+colMeans(mod_csim)
+(dic <- dic.samples(model = mod, n.iter = 1e3))
+```
+
+### Reduced Model 
+
+
+The reduced model was run including only the glucose and BMI predictors, then the DIC and the means of the combined simulations were calculated: 
+
+
+```{r}
+#traceplot(mod2_sim)
+#autocorr.diag(mod2_sim)
+#plot(mod2_sim)
+#effectiveSize(mod2_sim)
+colMeans(mod2_csim)
+(dic2 <- dic.samples(mod2, n.iter = 1e3))
+
+```
+
+
+The comparison of the two models in the DIC indicates preference for the complete model, reason why it was decided to use this model to make predictions and to compare it with the real data. 
+
+
+```{r}
+pm_coefs <- colMeans(mod_csim)
+
+pm_Xb <- pm_coefs["int"] + X %*% pm_coefs[1:8]
+
+phat <- 1.0 / (1.0 + exp(-pm_Xb))
+
+p <- ifelse(phat > 0.5, 1, 0)
+
+confusionMatrix(p, pima$test)
+```
+
+
+The table above shows the analysis of the classification of the complete model versus the actual data, it indicates that the model has an accuracy of 78%, although the accuracy result is adequate and the sensitivity also is (89%), the specificity of the prediction indicates that it is not the best model (58%).
+
+
+## Conclusions
+
+
+The complete model suggests that other variables besides glucose and BMI may be useful in diagnostic accuracy. It would be worth exploring other combinations of the predictors that could have greater predictive power and at the same time be simpler than the complete model.
+
+
+The present study raises considerations for the diagnosis of people with diabetes, it suggests that although glucose and BMI are fundamental variables for the diagnosis, there are some other indicators that in an additive way can help to increase the precision in the detection of this problem. 
+
+
+
+
+
+
+
