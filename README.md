@@ -4,7 +4,7 @@ Bayesian Statistics: Techniques and Models
 
 Final project of the [Bayesian Statistics: Techniques and Models](https://www.coursera.org/learn/mcmc-bayesian-statistics) course, which is taught online by University of California, Santa Cruz on Coursera.
 
-I share in the `.pdf` and `.md` report with R code, as well as my course certificate.
+I share the `.pdf` and `.md` reports with R code, as well as my course certificate.
 
 -   Final project with R and JAGS outputs [here.](https://github.com/saidejp/Bayesian_Statistics_Techniques/blob/master/final_project.md)
 
